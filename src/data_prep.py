@@ -5,6 +5,8 @@ from functools import reduce
 import re
 import json
 import matplotlib.pyplot as plt
+from colormath.color_objects import sRGBColor, LabColor
+from colormath.color_conversions import convert_color
 
 
 class JsonSetEncoder(json.JSONEncoder):
@@ -32,7 +34,7 @@ def extract_colors_to_defaultdict(raw_data_filepath: pathlib.Path) -> defaultdic
     
     return color_palette
 
-def save_defaultdict_to_json(data: defaultdict, output_filepath: pathlib.Path):
+def save_dict_to_json(data: defaultdict | dict, output_filepath: pathlib.Path):
     try:
         with open(file=output_filepath, mode="w", encoding="utf-8") as json_file:
             json.dump(dict(data), json_file, indent=2, cls=JsonSetEncoder)
@@ -54,14 +56,10 @@ def load_json_as_dict(filepath: pathlib.Path) -> dict:
     
     return data
 
-def map_dict_itemlist_to_itemlist_frequencies(dictionary: dict[str, list]) -> dict[str, int]:
+def convert_dict_itemlist_to_itemlist_frequencies(dictionary: dict[str, list]) -> dict[str, int]:
     itemlist_frequencies = map(lambda item: len(item), dictionary.values())
     item_to_freq_dict = dict(zip(dictionary.keys(), itemlist_frequencies))
     return item_to_freq_dict 
-
-def print_total_samples(labels, frequencies, palette_threshold: int = 3) -> int:
-    _filtered = list(filter(lambda item: item if item[0] >= 3 else None, zip(labels, frequencies)))
-    return sum(value for _, value in _filtered)
 
 def plot_bar_chart(x_axis, y_axis):
     # Plot as bar chart
@@ -78,28 +76,49 @@ def plot_bar_chart(x_axis, y_axis):
     plt.tight_layout()
     plt.show()
 
+def filter_palettes(palette: dict, paeltte_freq: int = 3) -> dict:
+    _filtered = dict(filter(lambda item: item if len(item[1]) >= paeltte_freq else None , palette.items()))
+    return _filtered
+
+def truncate_color_palettes(color_palettes: dict, required_palette_size: int) -> dict[str, list[str]]:
+    truncated_color_palettes = map(lambda item: item[1][:required_palette_size], color_palettes.items())
+    res = dict(zip(color_palettes.keys(), truncated_color_palettes))
+    return res
+
+def hex_to_lab(hex_color_string: str) -> LabColor:
+    rgb_color = sRGBColor.new_from_rgb_hex(hex_color_string)
+    lab_color = convert_color(rgb_color, LabColor)  # this function should return a LabColor object
+    return lab_color
+
+def convert_hexlist_to_lablist(color_palette: list[str]) -> list[dict[str, float]]:
+    new_color_palette = []
+    for hex_color in color_palette:
+        lab_col = hex_to_lab(hex_color)
+        new_color_palette.append(
+            {'lab_l': lab_col.lab_l,
+             'lab_a': lab_col.lab_a,
+             'lab_b': lab_col.lab_b}
+        )
+    return new_color_palette
 
 def main():
-    raw_data_path = Path().cwd() / "dataset" / "raw" / "all-colors.txt"
-    color_palette_filepath = Path().cwd() / "dataset" / "all-colors.json"
-    
-    color_palette = extract_colors_to_defaultdict(raw_data_path)
-    save_defaultdict_to_json(color_palette, color_palette_filepath)
 
-    color_palette_filepath = Path().cwd() / "dataset" / "all-colors.json"
-    color_palette = load_json_as_dict(color_palette_filepath)
-    company_plette_size = map_dict_itemlist_to_itemlist_frequencies(color_palette)
+    truncated_colors_filepath = Path().cwd() / "dataset" / "HEX" / "truncated-selected-colors.json"
+    # Run this if you want to create the final palettes used in the dataset
+    if False:
+        raw_data_path = Path().cwd() / "dataset" / "raw" / "all-colors.txt"
+        json_data_path = Path().cwd() / "dataset" / "raw" / "all-colors.json"
 
-    # Create barchart data
-    barchart_data = defaultdict(int)
-    for _, palette_size in company_plette_size.items():
-        barchart_data[palette_size] += 1
-    
-    labels = list(barchart_data.keys())
-    frequencies = list(barchart_data.values())
-    labels, frequencies = zip(*sorted(zip(labels, frequencies)))
-    plot_bar_chart(labels, frequencies)
+        all_colors_hex = extract_colors_to_defaultdict(raw_data_path)
+        save_dict_to_json(all_colors_hex, json_data_path)
+        filtered_color_palettes_hex = filter_palettes(load_json_as_dict(json_data_path))
+        truncated_color_palettes_hex = truncate_color_palettes(filtered_color_palettes_hex, required_palette_size=3)
+        save_dict_to_json(truncated_color_palettes_hex, truncated_colors_filepath)
 
+    lab_truncated_colors_filepath = Path().cwd() / "dataset" / "LAB" / "truncated-selected-colors.json"
+    final_color_palettes = load_json_as_dict(truncated_colors_filepath)
+    lab_color_palettes = dict(zip(final_color_palettes.keys() ,map(convert_hexlist_to_lablist, final_color_palettes.values())))
+    save_dict_to_json(lab_color_palettes, lab_truncated_colors_filepath)
 
 if __name__ == "__main__":
     main()
